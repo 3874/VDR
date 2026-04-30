@@ -1,3 +1,5 @@
+import { compactText } from "./textNormalize.js";
+
 export const STATEMENT_TYPES = ["balance_sheet", "income_statement", "cash_flow_statement", "equity_changes"];
 
 export function sliceStatementText(text, statementType) {
@@ -31,7 +33,7 @@ export function findStatementTitles(lines) {
   return titles;
 }
 
-export function getStatementTitleType(line) {
+function getStatementTitleType(line) {
   const compact = compactText(line);
   if (!compact || compact.length > 50) return null;
   if (compact.includes("\uc8fc\uc11d") || compact.includes("\uc778\uc2dd") || compact.includes("\uad00\ub828")) return null;
@@ -66,6 +68,3 @@ function matchStatementType(compact) {
   return null;
 }
 
-function compactText(text) {
-  return String(text ?? "").replace(/\s+/g, "").toLowerCase();
-}

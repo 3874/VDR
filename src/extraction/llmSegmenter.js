@@ -1,3 +1,6 @@
+import { callLLMJson, chooseProvider } from "./llmClient.js";
+import { parseJsonResponse } from "./jsonResponse.js";
+
 const ALLOWED_TYPES = new Set(["balance_sheet", "income_statement", "cash_flow_statement", "equity_changes"]);
 const ALLOWED_SCOPES = new Set(["consolidated", "separate", "unknown"]);
 
@@ -30,10 +33,8 @@ export async function refineStatementCandidatesWithLLM(document, heuristicCandid
     })),
   };
 
-  const raw = provider.name === "openai"
-    ? await callOpenAI(provider, buildPrompt(payload))
-    : await callGemini(provider, buildPrompt(payload));
-  const refined = widenWithHeuristicRanges(normalizeSegments(JSON.parse(stripMarkdownJson(raw)), document), heuristicCandidates);
+  const raw = await callLLMJson(provider, buildPrompt(payload), { purpose: `${provider.name} segment refinement` });
+  const refined = widenWithHeuristicRanges(normalizeSegments(parseJsonResponse(raw), document), heuristicCandidates);
   return {
     candidates: refined.length ? refined : heuristicCandidates,
     usedLLM: refined.length > 0,
@@ -94,19 +95,6 @@ function isStatementLikeTitle(title) {
   );
 }
 
-function chooseProvider(state) {
-  const configured = state.analysis.provider;
-  if (configured === "openai" && state.apiKeys.openai) {
-    return { name: "openai", apiKey: state.apiKeys.openai, model: state.analysis.openaiModel || "gpt-4o-mini" };
-  }
-  if (configured === "gemini" && state.apiKeys.gemini) {
-    return { name: "gemini", apiKey: state.apiKeys.gemini, model: state.analysis.geminiModel || "gemini-2.5-flash" };
-  }
-  if (state.apiKeys.openai) return { name: "openai", apiKey: state.apiKeys.openai, model: state.analysis.openaiModel || "gpt-4o-mini" };
-  if (state.apiKeys.gemini) return { name: "gemini", apiKey: state.apiKeys.gemini, model: state.analysis.geminiModel || "gemini-2.5-flash" };
-  return null;
-}
-
 function buildPrompt(payload) {
   return [
     "You are reviewing text extracted from Korean audit reports and annual reports.",
@@ -136,46 +124,6 @@ function buildPrompt(payload) {
     "Input:",
     JSON.stringify(payload),
   ].join("\n");
-}
-
-async function callOpenAI(provider, prompt) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${provider.apiKey}`,
-    },
-    body: JSON.stringify({
-      model: provider.model,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: "Return only valid JSON." },
-        { role: "user", content: prompt },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error(`OpenAI segment refinement failed: ${response.status} ${await response.text()}`);
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? "";
-}
-
-async function callGemini(provider, prompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(provider.model)}:generateContent?key=${encodeURIComponent(provider.apiKey)}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      generationConfig: {
-        temperature: 0,
-        responseMimeType: "application/json",
-      },
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  });
-  if (!response.ok) throw new Error(`Gemini segment refinement failed: ${response.status} ${await response.text()}`);
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
 }
 
 function normalizeSegments(parsed, document) {
@@ -238,10 +186,6 @@ function widenWithHeuristicRanges(refined, heuristicCandidates) {
 
 function rangesOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart <= bEnd && bStart <= aEnd;
-}
-
-function stripMarkdownJson(value) {
-  return String(value ?? "").trim().replace(/^```(?:json)?\s*/i, "").replace(/```$/i, "").trim();
 }
 
 function truncatePageText(text) {

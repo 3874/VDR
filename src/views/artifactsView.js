@@ -1,4 +1,5 @@
 import { state } from "../store.js";
+import { escapeHtml } from "../utils/html.js";
 
 export function renderArtifactsView(root) {
   root.innerHTML = `
@@ -28,10 +29,6 @@ function downloadJson() {
   anchor.download = "xbrl_like.json";
   anchor.click();
   URL.revokeObjectURL(url);
-}
-
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
 }
 
 function renderStatementPreview(container) {

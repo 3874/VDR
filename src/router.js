@@ -13,7 +13,7 @@ export const routes = [
   { id: "artifacts", label: "Artifacts", title: "Artifacts", subtitle: "Download generated XBRL-like JSON." },
 ];
 
-export function renderNav() {
+function renderNav() {
   const nav = document.querySelector("#nav");
   nav.innerHTML = "";
   for (const route of routes) {

@@ -1,4 +1,5 @@
 import { findStatementTitles, hasAnyStatementTitle, hasStatementTitle, sliceStatementText, STATEMENT_TYPES } from "./statementSegments.js";
+import { compactText, normalizeWhitespace } from "./textNormalize.js";
 
 const STATEMENT_KEYWORDS = {
   balance_sheet: ["\uc7ac\ubb34\uc0c1\ud0dc\ud45c", "\ud3ec\uad04\uc7ac\ubb34\uc0c1\ud0dc\ud45c", "statement of financial position", "balance sheet"],
@@ -40,7 +41,7 @@ export function discoverStatementSpans(document, maxSpanPages = 3) {
   return dedupeCandidates(candidates).sort((a, b) => a.startPage - b.startPage || b.score - a.score);
 }
 
-export function scoreStatementPage(text, statementType) {
+function scoreStatementPage(text, statementType) {
   const segment = sliceStatementText(text, statementType);
   const normalized = normalize(segment);
   const compact = compactText(segment);
@@ -177,11 +178,7 @@ function isProbableToc(text) {
 }
 
 function normalize(text) {
-  return text.replace(/\s+/g, " ").toLowerCase();
-}
-
-function compactText(text) {
-  return String(text ?? "").replace(/\s+/g, "").toLowerCase();
+  return normalizeWhitespace(text);
 }
 
 function includesKeyword(normalized, compact, keyword) {

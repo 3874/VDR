@@ -1,4 +1,4 @@
-export function parseNumber(value) {
+function parseNumber(value) {
   if (value == null) return null;
   if (typeof value === "number") return value;
   let text = String(value).trim();

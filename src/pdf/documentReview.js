@@ -1,3 +1,5 @@
+import { compactText } from "./textNormalize.js";
+
 const REPORT_PATTERNS = {
   annual_report: [
     "\uc0ac\uc5c5\ubcf4\uace0\uc11c",
@@ -215,6 +217,3 @@ function dedupeEntries(entries) {
   });
 }
 
-function compactText(text) {
-  return String(text ?? "").replace(/\s+/g, "").toLowerCase();
-}

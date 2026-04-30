@@ -26,11 +26,7 @@ async function loadPdfArrayBuffer(arrayBuffer, filename, file = null) {
   };
 }
 
-function buildPositionAwareText(items) {
-  return rowsToText(buildItemRows(items));
-}
-
-export function buildItemRows(items) {
+function buildItemRows(items) {
   const rows = [];
   for (const item of items) {
     const text = String(item.str ?? "").trim();

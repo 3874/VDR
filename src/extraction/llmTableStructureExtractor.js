@@ -1,5 +1,6 @@
 import { mapConcept } from "../xbrl/concepts.js";
 import { normalizeAmount } from "../xbrl/normalizer.js";
+import { callLLMJson, chooseProvider } from "./llmClient.js";
 import { buildTableEvidencePages } from "./tableEvidence.js";
 import { normalizeAndValidateStructure, parseStructureResponse } from "./structureSchema.js";
 
@@ -19,9 +20,10 @@ export async function extractFactsWithLLMStructure({ document, candidate, pages,
     pages: buildTableEvidencePages(pages),
   };
 
-  const raw = provider.name === "openai"
-    ? await callOpenAI(provider, buildPrompt(payload))
-    : await callGemini(provider, buildPrompt(payload));
+  const raw = await callLLMJson(provider, buildPrompt(payload), {
+    purpose: `${provider.name} structure extraction`,
+    systemMessage: "Return only valid JSON. Never output extracted numeric values; output source cell references only.",
+  });
   const structure = normalizeAndValidateStructure(parseStructureResponse(raw), pages);
   const facts = structureToFacts(document, candidate, pages, structure, extractionOrderStart);
   return {
@@ -143,49 +145,6 @@ function cellsToBbox(cells) {
   const x2 = Math.max(...cells.map((cell) => cell.x + (cell.width ?? 0)));
   const y2 = Math.max(...cells.map((cell) => cell.y + (cell.height ?? 0)));
   return [round(x1), round(y1), round(x2), round(y2)];
-}
-
-function chooseProvider(state) {
-  const configured = state.analysis.provider;
-  if (configured === "openai" && state.apiKeys.openai) return { name: "openai", apiKey: state.apiKeys.openai, model: state.analysis.openaiModel || "gpt-4o-mini" };
-  if (configured === "gemini" && state.apiKeys.gemini) return { name: "gemini", apiKey: state.apiKeys.gemini, model: state.analysis.geminiModel || "gemini-2.5-flash" };
-  if (state.apiKeys.openai) return { name: "openai", apiKey: state.apiKeys.openai, model: state.analysis.openaiModel || "gpt-4o-mini" };
-  if (state.apiKeys.gemini) return { name: "gemini", apiKey: state.apiKeys.gemini, model: state.analysis.geminiModel || "gemini-2.5-flash" };
-  return null;
-}
-
-async function callOpenAI(provider, prompt) {
-  const response = await fetch("https://api.openai.com/v1/chat/completions", {
-    method: "POST",
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${provider.apiKey}` },
-    body: JSON.stringify({
-      model: provider.model,
-      temperature: 0,
-      response_format: { type: "json_object" },
-      messages: [
-        { role: "system", content: "Return only valid JSON. Never output extracted numeric values; output source cell references only." },
-        { role: "user", content: prompt },
-      ],
-    }),
-  });
-  if (!response.ok) throw new Error(`OpenAI structure extraction failed: ${response.status} ${await response.text()}`);
-  const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? "";
-}
-
-async function callGemini(provider, prompt) {
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(provider.model)}:generateContent?key=${encodeURIComponent(provider.apiKey)}`;
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      generationConfig: { temperature: 0, responseMimeType: "application/json" },
-      contents: [{ parts: [{ text: prompt }] }],
-    }),
-  });
-  if (!response.ok) throw new Error(`Gemini structure extraction failed: ${response.status} ${await response.text()}`);
-  const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
 }
 
 function round(value) {

@@ -1,5 +1,6 @@
 import { renderApp } from "../router.js";
 import { saveApiKeys, state } from "../store.js";
+import { escapeHtml } from "../utils/html.js";
 
 export function renderApiKeysView(root) {
   root.innerHTML = `
@@ -32,6 +33,3 @@ export function renderApiKeysView(root) {
   });
 }
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[char]);
-}
