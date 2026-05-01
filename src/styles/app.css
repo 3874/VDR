@@ -1,14 +1,16 @@
 :root {
   color-scheme: dark;
-  --bg: #0f1117;
-  --panel: #181b24;
-  --panel-2: #222531;
-  --text: #f5f7fb;
-  --muted: #9ca3af;
-  --line: #343846;
+  --bg: #0b0d11;
+  --panel: #14171f;
+  --panel-2: #1c1f2b;
+  --text: #ffffff;
+  --muted: #8e96aa;
+  --line: rgba(255, 255, 255, 0.08);
   --accent: #ff4b4b;
+  --accent-gradient: linear-gradient(135deg, #ff4b4b 0%, #ff7676 100%);
   --accent-2: #35d07f;
   --warn: #f0c95a;
+  --sidebar-bg: rgba(18, 20, 27, 0.85);
 }
 
 * {
@@ -33,46 +35,81 @@ select {
 
 .sidebar {
   min-height: 100vh;
-  background: #292a33;
-  padding: 28px 20px;
+  background: var(--sidebar-bg);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 40px 24px;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 40px;
+  border-right: 1px solid var(--line);
+  position: sticky;
+  top: 0;
 }
 
 .brand h1 {
-  margin: 0 0 18px;
-  font-size: 25px;
+  margin: 0 0 8px;
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  background: linear-gradient(to right, #fff, #9ca3af);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
-.brand p,
-.sidebar-footer,
+.brand p {
+  font-size: 13px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  opacity: 0.8;
+}
+
 .muted {
   color: var(--muted);
 }
 
 .nav {
   display: grid;
-  gap: 12px;
-  border-top: 1px solid #555865;
-  border-bottom: 1px solid #555865;
-  padding: 28px 0;
+  gap: 8px;
+
+
+  padding: 0;
 }
 
 .nav button,
 .btn {
-  border: 1px solid #575b69;
-  background: transparent;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--text);
-  border-radius: 8px;
-  padding: 12px 14px;
+  border-radius: 12px;
+  padding: 14px 18px;
+  font-weight: 500;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  display: flex;
+  align-items: center;
+  gap: 12px;
   cursor: pointer;
+}
+
+.nav button:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.15);
+  transform: translateY(-1px);
 }
 
 .nav button.active,
 .btn.primary {
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--accent-gradient);
+  border-color: transparent;
+  box-shadow: 0 4px 15px rgba(255, 75, 75, 0.3);
+  color: white;
+}
+
+.nav button.active:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 20px rgba(255, 75, 75, 0.4);
 }
 
 .btn:disabled {
