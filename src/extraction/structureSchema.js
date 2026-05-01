@@ -1,5 +1,6 @@
 import { buildCellLookup, cellReferenceExists } from "./tableEvidence.js";
 import { parseJsonResponse } from "./jsonResponse.js";
+import { normalizeUnitLabel } from "../xbrl/normalizer.js";
 
 export function parseStructureResponse(raw) {
   return parseJsonResponse(raw);
@@ -71,15 +72,6 @@ function inferColumnsFromRows(rows) {
     for (const key of Object.keys(row.valueCells ?? {})) keys.add(key);
   }
   return [...keys].map((key) => ({ key, label: key }));
-}
-
-function normalizeUnitLabel(unit) {
-  const text = String(unit ?? "KRW").trim();
-  if (/천\s*원|thousand/i.test(text)) return "천원";
-  if (/백\s*만\s*원|million/i.test(text)) return "백만원";
-  if (/억\s*원/.test(text)) return "억원";
-  if (/원|krw/i.test(text)) return "KRW";
-  return text || "KRW";
 }
 
 function cleanLabel(label) {

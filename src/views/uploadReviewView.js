@@ -6,8 +6,17 @@ import { extractMetricsFromText } from "../pdf/textExtractor.js";
 import { loadPdfFile, renderPdfPage } from "../pdf/pdfLoader.js";
 import { refineStatementCandidatesWithLLM } from "../extraction/llmSegmenter.js";
 import { extractFactsWithLLMStructure } from "../extraction/llmTableStructureExtractor.js";
+import { extractFactsWithVision } from "../extraction/llmVisionExtractor.js";
+import { filterFactsForStatement } from "../extraction/statementFactFilter.js";
 import { buildXbrlLike, mapMetricsToFacts } from "../xbrl/mapper.js";
 import { runStatementChecks } from "../validation/statementChecks.js";
+
+const STATEMENT_TABS = [
+  { type: "balance_sheet", label: "Balance Sheet" },
+  { type: "income_statement", label: "Income Statement" },
+  { type: "cash_flow_statement", label: "Cash Flow" },
+  { type: "equity_changes", label: "Equity Changes" },
+];
 
 export function renderUploadReviewView(root) {
   root.innerHTML = `
@@ -101,20 +110,23 @@ function renderDocumentReview(review) {
   return `
     <div class="status ${review.issues.some((issue) => issue.severity === "high") ? "error" : review.issues.length ? "warn" : ""}">
       Type: <strong>${review.reportType}</strong>
-      · confidence: ${Math.round(review.confidence * 100)}%
-      · TOC: ${review.toc.exists ? `found on page ${review.toc.pageNumber}, ${review.toc.entries.length} entries` : "not found"}
+      | confidence: ${Math.round(review.confidence * 100)}%
+      | TOC: ${review.toc.exists ? `found on page ${review.toc.pageNumber}, ${review.toc.entries.length} entries` : "not found"}
     </div>
-    <div class="grid two">
-      <div>
-        <h4>Required Sections</h4>
-        ${renderSectionChecks(review.expectedSections)}
+    <details class="collapse-block">
+      <summary>Document Structure Review</summary>
+      <div class="grid two">
+        <div>
+          <h4>Required Sections</h4>
+          ${renderSectionChecks(review.expectedSections)}
+        </div>
+        <div>
+          <h4>TOC Checks</h4>
+          ${renderTocChecks(review.tocChecks)}
+        </div>
       </div>
-      <div>
-        <h4>TOC Checks</h4>
-        ${renderTocChecks(review.tocChecks)}
-      </div>
-    </div>
-    ${renderReviewIssues(review.issues)}
+      ${renderReviewIssues(review.issues)}
+    </details>
   `;
 }
 
@@ -167,15 +179,27 @@ function renderReviewIssues(issues) {
 
 function renderCandidateTable(document, docIndex) {
   if (!document.candidates.length) return `<p class="muted">No statement spans found yet.</p>`;
+  const activeType = getActiveStatementType(document);
+  const rows = document.candidates
+    .map((candidate, idx) => ({ candidate, idx }))
+    .filter((row) => row.candidate.statementType === activeType);
   return `
+    <div class="statement-tabs">
+      ${STATEMENT_TABS.map((tab) => {
+        const count = document.candidates.filter((candidate) => candidate.statementType === tab.type).length;
+        return `<button class="statement-tab ${tab.type === activeType ? "active" : ""}" data-doc="${docIndex}" data-statement-tab="${tab.type}" type="button">${tab.label} <span>${count}</span></button>`;
+      }).join("")}
+    </div>
+    <div class="statement-summary">
+      ${renderStatementSummary(rows.map((row) => row.candidate))}
+    </div>
     <table>
-      <thead><tr><th>Use</th><th>Scope</th><th>Type</th><th>Start</th><th>End</th><th>Score</th></tr></thead>
+      <thead><tr><th>Use</th><th>Scope</th><th>Start</th><th>End</th><th>Score</th></tr></thead>
       <tbody>
-        ${document.candidates.map((candidate, idx) => `
+        ${rows.map(({ candidate, idx }) => `
           <tr>
             <td><input data-doc="${docIndex}" data-row="${idx}" data-field="include" type="checkbox" ${candidate.include ? "checked" : ""}></td>
             <td><select data-doc="${docIndex}" data-row="${idx}" data-field="scope">${option("consolidated", candidate.scope)}${option("separate", candidate.scope)}${option("unknown", candidate.scope)}</select></td>
-            <td>${candidate.statementType}</td>
             <td><input data-doc="${docIndex}" data-row="${idx}" data-field="startPage" type="number" value="${candidate.startPage}"></td>
             <td><input data-doc="${docIndex}" data-row="${idx}" data-field="endPage" type="number" value="${candidate.endPage}"></td>
             <td>${candidate.score}</td>
@@ -186,11 +210,33 @@ function renderCandidateTable(document, docIndex) {
   `;
 }
 
+function renderStatementSummary(candidates) {
+  if (!candidates.length) return `<span class="muted">No candidate for this statement type.</span>`;
+  return candidates.map((candidate) => `
+    <span class="range-pill ${candidate.include ? "active" : ""}">
+      ${candidate.scope}: ${candidate.startPage}-${candidate.endPage}
+    </span>
+  `).join("");
+}
+
+function getActiveStatementType(document) {
+  const selected = document.activeStatementType;
+  if (STATEMENT_TABS.some((tab) => tab.type === selected)) return selected;
+  return STATEMENT_TABS.find((tab) => document.candidates.some((candidate) => candidate.statementType === tab.type))?.type ?? STATEMENT_TABS[0].type;
+}
+
 function option(value, selected) {
   return `<option value="${value}" ${value === selected ? "selected" : ""}>${value}</option>`;
 }
 
 function bindCandidateTable(container) {
+  container.querySelectorAll("[data-statement-tab]").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      const doc = state.documents[Number(event.currentTarget.dataset.doc)];
+      doc.activeStatementType = event.currentTarget.dataset.statementTab;
+      renderApp();
+    });
+  });
   container.querySelectorAll("[data-row]").forEach((input) => {
     input.addEventListener("change", (event) => {
       const doc = state.documents[Number(event.target.dataset.doc)];
@@ -203,7 +249,10 @@ function bindCandidateTable(container) {
 }
 
 function renderPreviews(container, document) {
-  const selected = document.candidates.filter((candidate) => candidate.include).slice(0, 9);
+  const activeType = getActiveStatementType(document);
+  const selected = document.candidates
+    .filter((candidate) => candidate.include && candidate.statementType === activeType)
+    .slice(0, 6);
   container.innerHTML = selected.map((candidate, idx) => `
     <div class="preview-card">
       <strong>${candidate.scope} ${candidate.statementType}</strong>
@@ -230,26 +279,34 @@ async function runExtraction() {
   let extractionOrder = 0;
   for (const document of state.documents) {
     for (const candidate of document.candidates.filter((item) => item.include)) {
-      const pages = range(candidate.startPage, candidate.endPage)
-        .map((pageNumber) => document.pages.find((item) => item.pageNumber === pageNumber))
-        .filter(Boolean);
       let facts = [];
+
       try {
-        const structured = await extractFactsWithLLMStructure({
-          document,
-          candidate,
-          pages,
-          state,
-          extractionOrderStart: extractionOrder,
-        });
-        facts = structured.facts;
-        addLog(`${document.filename}: ${structured.message}`);
+        addLog(`${document.filename}: Starting vision extraction for ${candidate.statementType} (pages ${candidate.startPage}-${candidate.endPage})...`);
+        const vision = await extractFactsWithVision({ document, candidate, state, extractionOrderStart: extractionOrder });
+        facts = vision.facts;
+        addLog(`${document.filename}: ${vision.message}`);
       } catch (error) {
-        addLog(`${document.filename}: LLM structure extraction failed for ${candidate.statementType}. ${error.message}`, "error");
+        addLog(`${document.filename}: Vision extraction failed for ${candidate.statementType}. ${error.message}`, "error");
       }
+
       if (!facts.length) {
-        facts = extractCandidateWithPdfText(document, candidate, pages, extractionOrder);
+        try {
+          addLog(`${document.filename}: Falling back to text-based structure extraction...`);
+          const pages = pagesForCandidate(document, candidate);
+          const structured = await extractFactsWithLLMStructure({ document, candidate, pages, state, extractionOrderStart: extractionOrder });
+          facts = structured.facts;
+          addLog(`${document.filename}: ${structured.message}`);
+        } catch (error) {
+          addLog(`${document.filename}: Text-based structure extraction also failed. ${error.message}`, "error");
+        }
       }
+
+      if (!facts.length) {
+        facts = extractCandidateWithPdfText(document, candidate, pagesForCandidate(document, candidate), extractionOrder);
+      }
+
+      facts = filterFactsForStatement(facts, candidate.statementType);
       allFacts.push(...facts);
       extractionOrder += facts.length;
     }
@@ -275,6 +332,12 @@ function extractCandidateWithPdfText(document, candidate, pages, extractionOrder
   }
   addLog(`${document.filename}: extracted ${metrics.length} rows from ${candidate.statementType} using PDF text.`);
   return mapMetricsToFacts(document, metrics);
+}
+
+function pagesForCandidate(document, candidate) {
+  return range(candidate.startPage, candidate.endPage)
+    .map((pageNumber) => document.pages.find((item) => item.pageNumber === pageNumber))
+    .filter(Boolean);
 }
 
 function hasConfirmedPages() {

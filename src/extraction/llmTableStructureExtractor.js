@@ -1,6 +1,6 @@
 import { mapConcept } from "../xbrl/concepts.js";
 import { normalizeAmount } from "../xbrl/normalizer.js";
-import { callLLMJson, chooseProvider } from "./llmClient.js";
+import { callLLMJsonWithFallback, chooseProvider } from "./llmClient.js";
 import { buildTableEvidencePages } from "./tableEvidence.js";
 import { normalizeAndValidateStructure, parseStructureResponse } from "./structureSchema.js";
 
@@ -20,9 +20,11 @@ export async function extractFactsWithLLMStructure({ document, candidate, pages,
     pages: buildTableEvidencePages(pages),
   };
 
-  const raw = await callLLMJson(provider, buildPrompt(payload), {
-    purpose: `${provider.name} structure extraction`,
+  const prompt = buildPrompt(payload);
+  const { content: raw, provider: usedProvider } = await callLLMJsonWithFallback(state, prompt, {
+    purpose: "structure extraction",
     systemMessage: "Return only valid JSON. Never output extracted numeric values; output source cell references only.",
+    maxOutputTokens: 16_384,
   });
   const structure = normalizeAndValidateStructure(parseStructureResponse(raw), pages);
   const facts = structureToFacts(document, candidate, pages, structure, extractionOrderStart);
@@ -30,7 +32,7 @@ export async function extractFactsWithLLMStructure({ document, candidate, pages,
     facts,
     usedLLM: facts.length > 0,
     message: facts.length
-      ? `LLM structure extracted ${facts.length} verified rows${structure.warnings?.length ? ` with ${structure.warnings.length} validation warning(s)` : ""}.`
+      ? `${usedProvider.name}/${usedProvider.model} structure extracted ${facts.length} verified rows${structure.warnings?.length ? ` with ${structure.warnings.length} validation warning(s)` : ""}.`
       : "LLM structure returned no verified rows.",
   };
 }
@@ -39,18 +41,30 @@ function buildPrompt(payload) {
   return [
     "You are a financial statement table-structure extractor.",
     "Input is PDF.js layout evidence: pages, rows, cells, row_index, cell_index, x/y positions, row kind, and text.",
+    "Each page may include column_bands. A numeric cell may include value_column when its x position aligns with a detected period column.",
     "Task: identify the rows belonging to the requested Korean financial statement and return only table structure.",
     "Never invent, calculate, normalize, translate, or rewrite numeric values.",
     "Do not output numeric values directly. Output cell references only.",
     "Use only supplied cells. If a displayed value is split across cells, include all cell_indices in visual reading order.",
+    "Some account rows are visually wrapped across multiple PDF.js rows. If an account label appears on one row and its numeric values appear on the next row, treat them as one financial statement row when the numeric cells align with the period column_bands.",
+    "If a label or note is on one row and values are on a following wrapped row, use the value row's source cell references in value_cells and keep one combined output row.",
+    "Do not create separate output rows for wrapped continuation text or value-only rows.",
     "Keep original Korean account labels as shown. Put note numbers in notes, not in label.",
+    payload.statement_type === "equity_changes"
+      ? "For statement_type equity_changes, columns are equity component columns, not period columns. Dates and period labels are row labels, not column labels. Preserve every displayed equity component column label exactly as shown. If header text is split across rows, combine the split header text into one column label."
+      : "For non-equity statements, columns are displayed period columns.",
     "Exclude title rows, unit rows, period headers, DART page footers, note narrative sections, and subtotal labels without values.",
     "If multiple statements are present in the page range, extract only the requested statement_type and ignore the others.",
+    payload.statement_type === "cash_flow_statement"
+      ? "For cash_flow_statement, extract only cash flow rows from operating activities through the ending cash/cash-equivalents row. Ignore financial statement notes even when note headings appear on the same page as the last cash flow rows."
+      : "Ignore note-only rows and rows belonging to other statements.",
     "Return strict JSON only. No markdown or explanation.",
     "Required JSON schema:",
     JSON.stringify({
       unit: "KRW | thousand_KRW | million_KRW | other",
-      columns: [{ key: "2025", label: "current period label" }],
+      columns: payload.statement_type === "equity_changes"
+        ? [{ key: "share_capital", label: "자본금" }, { key: "retained_earnings", label: "이익잉여금" }, { key: "total_equity", label: "자본총계" }]
+        : [{ key: "2025", label: "current period label" }],
       rows: [
         {
           order: 1,
@@ -101,6 +115,7 @@ function structureToFacts(document, candidate, pages, structure, extractionOrder
       rawLine: "",
       allValues,
       periodLabels: columns.map((column) => column.key),
+      columnLabels: columns.map((column) => column.label || column.key),
       notes: row.notes,
       evidence,
       extractionOrder,

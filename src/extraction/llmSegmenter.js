@@ -1,4 +1,4 @@
-import { callLLMJson, chooseProvider } from "./llmClient.js";
+import { callLLMJsonWithFallback, chooseProvider } from "./llmClient.js";
 import { parseJsonResponse } from "./jsonResponse.js";
 
 const ALLOWED_TYPES = new Set(["balance_sheet", "income_statement", "cash_flow_statement", "equity_changes"]);
@@ -33,12 +33,16 @@ export async function refineStatementCandidatesWithLLM(document, heuristicCandid
     })),
   };
 
-  const raw = await callLLMJson(provider, buildPrompt(payload), { purpose: `${provider.name} segment refinement` });
-  const refined = widenWithHeuristicRanges(normalizeSegments(parseJsonResponse(raw), document), heuristicCandidates);
+  const prompt = buildPrompt(payload);
+  const { content: raw, provider: usedProvider } = await callLLMJsonWithFallback(state, prompt, {
+    purpose: "segment refinement",
+    maxOutputTokens: 8_192,
+  });
+  const refined = reconcileWithHeuristicRanges(normalizeSegments(parseJsonResponse(raw), document), heuristicCandidates);
   return {
     candidates: refined.length ? refined : heuristicCandidates,
     usedLLM: refined.length > 0,
-    message: refined.length ? `LLM refined ${refined.length} statement segment(s).` : "LLM returned no usable segments.",
+    message: refined.length ? `${usedProvider.name}/${usedProvider.model} refined ${refined.length} statement segment(s).` : "LLM returned no usable segments.",
   };
 }
 
@@ -103,6 +107,8 @@ function buildPrompt(payload) {
     "Return only strict JSON. No markdown.",
     "Only use these statement_type values: balance_sheet, income_statement, cash_flow_statement, equity_changes.",
     "The supplied pages may contain multiple statements, continuation rows, section headings, and notes. Split only the four target financial statements.",
+    "Never include financial statement notes in a segment. If notes start on the same page as the last statement rows, end at that page; if notes start on the next page, end before the notes page.",
+    "Do not extend a segment past the supplied heuristic candidate range for the same statement_type and scope.",
     "A section heading such as '2-3. 연결 자본변동표' is not necessarily the actual start if previous statement rows appear below it. Use the actual statement title or first continuation row as the segment boundary.",
     "If a statement continues from a previous supplied page, use the first supplied continuation page as start_page.",
     "Use anchors copied from the supplied text when possible.",
@@ -168,20 +174,43 @@ function dedupeSegments(segments) {
   });
 }
 
-function widenWithHeuristicRanges(refined, heuristicCandidates) {
-  return refined.map((segment) => {
-    const overlaps = heuristicCandidates.filter((candidate) =>
-      candidate.statementType === segment.statementType &&
-      rangesOverlap(candidate.startPage, candidate.endPage, segment.startPage, segment.endPage)
-    );
-    if (!overlaps.length) return segment;
-    return {
-      ...segment,
-      startPage: Math.min(segment.startPage, ...overlaps.map((candidate) => candidate.startPage)),
-      endPage: Math.max(segment.endPage, ...overlaps.map((candidate) => candidate.endPage)),
-      reasons: [...segment.reasons, "widened_with_heuristic_range"],
-    };
-  });
+function reconcileWithHeuristicRanges(refined, heuristicCandidates) {
+  const output = [];
+
+  for (const heuristic of heuristicCandidates) {
+    const match = findBestRefinedMatch(refined, heuristic);
+    if (!match) {
+      output.push(heuristic);
+      continue;
+    }
+
+    const startPage = Math.max(heuristic.startPage, match.startPage);
+    const endPage = Math.min(heuristic.endPage, match.endPage);
+    output.push({
+      ...heuristic,
+      scope: match.scope === "unknown" ? heuristic.scope : match.scope,
+      startPage: startPage <= endPage ? startPage : heuristic.startPage,
+      endPage: startPage <= endPage ? endPage : heuristic.endPage,
+      score: Math.max(heuristic.score, match.score),
+      reasons: [...heuristic.reasons, ...match.reasons, "llm_range_clamped_to_heuristic"],
+    });
+  }
+
+  return dedupeSegments(output).sort((a, b) => a.startPage - b.startPage || b.score - a.score);
+}
+
+function findBestRefinedMatch(refined, heuristic) {
+  return refined
+    .filter((segment) =>
+      segment.statementType === heuristic.statementType &&
+      (segment.scope === heuristic.scope || segment.scope === "unknown" || heuristic.scope === "unknown") &&
+      rangesOverlap(heuristic.startPage, heuristic.endPage, segment.startPage, segment.endPage)
+    )
+    .sort((a, b) => overlapSize(b, heuristic) - overlapSize(a, heuristic) || b.score - a.score)[0] ?? null;
+}
+
+function overlapSize(segment, heuristic) {
+  return Math.max(0, Math.min(segment.endPage, heuristic.endPage) - Math.max(segment.startPage, heuristic.startPage) + 1);
 }
 
 function rangesOverlap(aStart, aEnd, bStart, bEnd) {

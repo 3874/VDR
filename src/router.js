@@ -1,4 +1,5 @@
 import { state, setActiveView } from "./store.js";
+import { chooseProvider } from "./extraction/llmClient.js";
 import { renderApiKeysView } from "./views/apiKeysView.js";
 import { renderAnalysisSettingsView } from "./views/analysisSettingsView.js";
 import { renderArtifactsView } from "./views/artifactsView.js";
@@ -44,8 +45,7 @@ export function renderApp() {
 
 function renderProviderBadge() {
   const badge = document.querySelector("#provider-badge");
-  const provider = state.analysis.provider;
-  const hasKey = provider === "openai" ? Boolean(state.apiKeys.openai) : Boolean(state.apiKeys.gemini);
-  badge.textContent = hasKey ? `${provider} ready` : `${provider} key missing`;
-  badge.className = hasKey ? "badge ok" : "badge";
+  const provider = chooseProvider(state);
+  badge.textContent = provider ? `${provider.name} ready` : "LLM key missing";
+  badge.className = provider ? "badge ok" : "badge";
 }

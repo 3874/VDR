@@ -38,7 +38,7 @@ function loadApiKeys() {
 
 function loadAnalysisSettings() {
   try {
-    return JSON.parse(localStorage.getItem("quant_vdr_analysis")) ?? defaultAnalysis();
+    return { ...defaultAnalysis(), ...(JSON.parse(localStorage.getItem("quant_vdr_analysis")) ?? {}) };
   } catch {
     return defaultAnalysis();
   }
@@ -46,9 +46,9 @@ function loadAnalysisSettings() {
 
 function defaultAnalysis() {
   return {
-    provider: "openai",
-    openaiModel: "gpt-4o-mini",
-    geminiModel: "gemini-2.5-flash",
-    maxPages: 80,
+    provider: "gemini",
+    openaiModel: "gpt-5.4-mini",
+    geminiModel: "gemini-2.5-flash-lite",
+    maxPages: 100,
   };
 }

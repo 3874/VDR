@@ -133,7 +133,8 @@ function parseTocEntries(text) {
 
 function checkTocEntry(document, entry, excludedPages = new Set()) {
   const titleKey = compactText(entry.title);
-  const exact = findPageByCompactText(document, titleKey, excludedPages);
+  const likely = findPageNearExpected(document, entry, excludedPages);
+  const exact = likely ?? findPageByCompactText(document, titleKey, excludedPages);
   const loose = exact ?? findPageByLooseTokens(document, entry.title, excludedPages);
   return {
     ...entry,
@@ -154,7 +155,7 @@ function findSection(document, section, excludedPages = new Set()) {
 
 function findPageByCompactText(document, needle, excludedPages = new Set()) {
   if (!needle) return null;
-  return document.pages.find((page) => !excludedPages.has(page.pageNumber) && compactText(page.text).includes(needle)) ?? null;
+  return document.pages.find((page) => isValidSectionPage(page, needle, excludedPages)) ?? null;
 }
 
 function findPageByLooseTokens(document, title, excludedPages = new Set()) {
@@ -164,10 +165,63 @@ function findPageByLooseTokens(document, title, excludedPages = new Set()) {
     .slice(0, 4);
   if (!tokens.length) return null;
   return document.pages.find((page) => {
-    if (excludedPages.has(page.pageNumber)) return false;
     const compact = compactText(page.text);
-    return tokens.every((token) => compact.includes(token));
+    return isValidSectionPage(page, tokens.join(""), excludedPages) && tokens.every((token) => compact.includes(token));
   }) ?? null;
+}
+
+function findPageNearExpected(document, entry, excludedPages = new Set()) {
+  const titleKey = compactText(entry.title);
+  if (!titleKey || !Number.isInteger(entry.expectedPage)) return null;
+  const offsets = [0, 1, -1, 2, -2, 3, -3, 4, -4, 5, -5];
+  for (const offset of offsets) {
+    const pageNumber = entry.expectedPage + offset;
+    const page = document.pages.find((item) => item.pageNumber === pageNumber);
+    if (page && isValidSectionPage(page, titleKey, excludedPages)) return page;
+  }
+  return null;
+}
+
+function isValidSectionPage(page, needle, excludedPages = new Set()) {
+  if (!page || excludedPages.has(page.pageNumber)) return false;
+  if (isFinancialStatementTitle(needle)) return hasStandaloneFinancialStatementTitle(page.text, needle);
+  const compact = compactText(page.text);
+  if (!compact.includes(needle)) return false;
+  if (isLikelyReferencePage(compact, needle)) return false;
+  return true;
+}
+
+function isLikelyReferencePage(compact, needle) {
+  if (isFinancialStatementTitle(needle)) {
+    const index = compact.indexOf(needle);
+    if (index > 1200) return true;
+    const before = compact.slice(Math.max(0, index - 80), index);
+    if (before.includes("\uacf5\uc815\ud45c\uc2dc") || before.includes("\uc8fc\uc11d") || before.includes("\uac10\uc0ac\uc758\uacac")) return true;
+  }
+  return false;
+}
+
+function isFinancialStatementTitle(value) {
+  return [
+    "\uc7ac\ubb34\uc0c1\ud0dc\ud45c",
+    "\ud3ec\uad04\uc190\uc775\uacc4\uc0b0\uc11c",
+    "\uc190\uc775\uacc4\uc0b0\uc11c",
+    "\uc790\ubcf8\ubcc0\ub3d9\ud45c",
+    "\ud604\uae08\ud750\ub984\ud45c",
+  ].includes(value);
+}
+
+function hasStandaloneFinancialStatementTitle(text, needle) {
+  return String(text ?? "").split(/\n+/).some((line) => {
+    const compact = compactText(line).replace(/^\d+(?:-\d+)?\./, "");
+    if (compact.includes("\uc8fc\uc11d") || compact.length > 40) return false;
+    return compact === needle ||
+      compact === `\uc5f0\uacb0${needle}` ||
+      compact === `\uac1c\ubcc4${needle}` ||
+      compact === `\ubcc4\ub3c4${needle}` ||
+      compact === `\ud3ec\uad04${needle}` ||
+      compact === `\uc5f0\uacb0\ud3ec\uad04${needle}`;
+  });
 }
 
 function pageMatchStatus(expectedPage, foundPage) {
@@ -203,7 +257,7 @@ function cleanTocTitle(title) {
   return title
     .replace(/^[IVXLCDM\u2160-\u217f\d]+[.)\s-]*/i, "")
     .replace(/^[\u2460-\u2473\u2776-\u277f]\s*/, "")
-    .replace(/[.\s]+$/g, "")
+    .replace(/[-–—.\s]+$/g, "")
     .trim();
 }
 

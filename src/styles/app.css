@@ -185,6 +185,56 @@ th {
   padding: 12px;
 }
 
+.statement-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 18px 0 12px;
+}
+
+.statement-tab {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  color: var(--text);
+  border-radius: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+}
+
+.statement-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.statement-tab span {
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+.statement-tab.active span {
+  color: rgba(255, 255, 255, 0.82);
+}
+
+.statement-summary {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.range-pill {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--muted);
+  background: var(--panel-2);
+}
+
+.range-pill.active {
+  color: var(--accent-2);
+  border-color: rgba(53, 208, 127, 0.55);
+}
+
 .preview-card canvas {
   width: 100%;
   height: auto;
@@ -217,6 +267,37 @@ th {
 
 .issue-list li {
   margin: 6px 0;
+}
+
+.collapse-block {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin: 12px 0 16px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.collapse-block summary {
+  cursor: pointer;
+  padding: 12px 14px;
+  color: #cfd5e3;
+  font-weight: 650;
+}
+
+.collapse-block[open] {
+  padding-bottom: 14px;
+}
+
+.collapse-block[open] summary {
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.collapse-block > .grid,
+.collapse-block > .issue-list,
+.collapse-block > p {
+  margin-left: 14px;
+  margin-right: 14px;
 }
 
 .review-block {

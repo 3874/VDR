@@ -22,3 +22,12 @@ export function normalizeAmount(value, unit = "KRW", scale = 1) {
   ]);
   return parsed * (multipliers.get(unit) ?? scale ?? 1);
 }
+
+export function normalizeUnitLabel(unit) {
+  const text = String(unit ?? "KRW").trim();
+  if (/thousand|천\s*원/i.test(text)) return "천원";
+  if (/million|백\s*만\s*원/i.test(text)) return "백만원";
+  if (/hundred\s*million|억\s*원/i.test(text)) return "억원";
+  if (/won|원|krw/i.test(text)) return "KRW";
+  return text || "KRW";
+}

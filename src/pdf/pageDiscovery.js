@@ -27,12 +27,13 @@ export function discoverStatementSpans(document, maxSpanPages = 3) {
       }
       if (scored.score <= 0) continue;
       const scope = inferScope(page.text, contexts.get(page.pageNumber));
+      const startPage = resolveSpanStart(document.pages, page.pageNumber, statementType, maxSpanPages);
       candidates.push({
         include: true,
         scope,
         statementType,
-        startPage: page.pageNumber,
-        endPage: inferSpanEnd(document.pages, page.pageNumber, statementType, maxSpanPages),
+        startPage,
+        endPage: inferSpanEnd(document.pages, startPage, statementType, maxSpanPages),
         score: scored.score,
         reasons: scored.reasons,
       });
@@ -113,13 +114,38 @@ function combineSpanText(pages, startPage, maxSpanPages) {
   return pages.filter((page) => page.pageNumber >= startPage && page.pageNumber <= end).map((page) => page.text).join("\n");
 }
 
+function resolveSpanStart(pages, pageNumber, statementType, maxSpanPages) {
+  const byPage = new Map(pages.map((page) => [page.pageNumber, page]));
+  const currentText = byPage.get(pageNumber)?.text ?? "";
+  if (!hasTitle(currentText, statementType)) return pageNumber;
+
+  const segment = sliceStatementText(currentText, statementType);
+  if (hasStrongStatementBody(segment, statementType)) return pageNumber;
+
+  const max = Math.min(Math.max(...pages.map((page) => page.pageNumber)), pageNumber + maxSpanPages - 1);
+  for (let nextPageNumber = pageNumber + 1; nextPageNumber <= max; nextPageNumber += 1) {
+    const nextText = byPage.get(nextPageNumber)?.text ?? "";
+    if (hasAnyStatementTitle(nextText)) break;
+    if (hasContinuationBeforeNextStatement(nextText, statementType)) return nextPageNumber;
+  }
+
+  return pageNumber;
+}
+
+function hasStrongStatementBody(text, statementType) {
+  const evidence = getContinuationEvidence(text, statementType);
+  return evidence.rowHits >= 1 && evidence.numericCount >= 6 && evidence.valueLineCount >= 2;
+}
+
 function inferSpanEnd(pages, startPage, statementType, maxSpanPages) {
   const byPage = new Map(pages.map((page) => [page.pageNumber, page]));
   const lastPageNumber = Math.max(...pages.map((page) => page.pageNumber));
   const max = Math.min(lastPageNumber, startPage + maxSpanPages - 1);
   for (let pageNumber = startPage + 1; pageNumber <= max; pageNumber += 1) {
     const text = byPage.get(pageNumber)?.text ?? "";
-    if (isNonStatementSectionStart(text)) return Math.max(startPage, pageNumber - 1);
+    if (isNonStatementSectionStart(text)) {
+      return hasStatementTailContinuation(text, statementType) ? pageNumber : Math.max(startPage, pageNumber - 1);
+    }
     const hasAnyTitle = hasAnyStatementTitle(text);
     if (hasAnyTitle) {
       if (hasContinuationBeforeNextStatement(text, statementType)) return pageNumber;
@@ -129,15 +155,46 @@ function inferSpanEnd(pages, startPage, statementType, maxSpanPages) {
   return max;
 }
 
+function hasStatementTailContinuation(text, statementType) {
+  if (statementType === "cash_flow_statement") return hasCashFlowTailContinuation(text);
+  return false;
+}
+
+function hasCashFlowTailContinuation(text) {
+  const normalized = normalize(text);
+  const compact = compactText(text);
+  const terminalMarkers = [
+    "\uc7ac\ubb34\ud65c\ub3d9\ud604\uae08\ud750\ub984",
+    "\uc7ac\ubb34\ud65c\ub3d9\uc73c\ub85c\uc778\ud55c\ud604\uae08\ud750\ub984",
+    "\ud604\uae08\ubc0f\ud604\uae08\uc131\uc790\uc0b0\uc5d0\ub300\ud55c\ud658\uc728\ubcc0\ub3d9\ud6a8\uacfc",
+    "\ud604\uae08\ubc0f\ud604\uae08\uc131\uc790\uc0b0\uc758\uc21c\uc99d\uac00",
+    "\ud604\uae08\ubc0f\ud604\uae08\uc131\uc790\uc0b0\uc758\uc99d\uac00",
+    "\uae30\ucd08\ud604\uae08\ubc0f\ud604\uae08\uc131\uc790\uc0b0",
+    "\uae30\ub9d0\ud604\uae08\ubc0f\ud604\uae08\uc131\uc790\uc0b0",
+    "\uae30\ucd08\uc758\ud604\uae08",
+    "\uae30\ub9d0\uc758\ud604\uae08",
+    "\ud604\uae08\uc758\uc99d\uac00",
+    "\ud604\uae08\uc758\uac10\uc18c",
+  ];
+  const markerHits = terminalMarkers.filter((marker) => includesKeyword(normalized, compact, marker)).length;
+  const numericCount = (normalized.match(/\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?/g) ?? []).length;
+  return markerHits >= 2 && numericCount >= 4;
+}
+
 function hasContinuationBeforeNextStatement(text, statementType) {
   const segment = sliceStatementText(text, statementType);
   if (!segment.trim()) return false;
-  const normalized = normalize(segment);
-  const compact = compactText(segment);
+  const { rowHits, numericCount, valueLineCount } = getContinuationEvidence(segment, statementType);
+  return (rowHits >= 1 && numericCount >= 2) || valueLineCount >= 2;
+}
+
+function getContinuationEvidence(text, statementType) {
+  const normalized = normalize(text);
+  const compact = compactText(text);
   const rowHits = ROW_KEYWORDS[statementType].filter((keyword) => includesKeyword(normalized, compact, keyword)).length;
   const numericCount = (normalized.match(/\(?\d{1,3}(?:,\d{3})+(?:\.\d+)?\)?/g) ?? []).length;
-  const valueLineCount = countValueLines(segment);
-  return (rowHits >= 1 && numericCount >= 2) || valueLineCount >= 2;
+  const valueLineCount = countValueLines(text);
+  return { rowHits, numericCount, valueLineCount };
 }
 
 function isNonStatementSectionStart(text) {

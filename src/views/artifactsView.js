@@ -50,8 +50,9 @@ function groupFacts(facts) {
 
 function renderStatementSection(title, rows) {
   const ordered = dedupeRows([...rows].sort((a, b) => (a.extractionOrder ?? 0) - (b.extractionOrder ?? 0)));
-  const columnCount = Math.min(3, Math.max(1, ...ordered.map((fact) => (fact.allValues ?? []).length)));
-  const columns = buildPeriodColumns(ordered, columnCount);
+  const isEquityChanges = ordered.some((fact) => fact.statementType === "equity_changes");
+  const columnCount = isEquityChanges ? Math.max(1, ...ordered.map((fact) => (fact.allValues ?? []).length)) : Math.min(3, Math.max(1, ...ordered.map((fact) => (fact.allValues ?? []).length)));
+  const columns = buildStatementColumns(ordered, columnCount, isEquityChanges);
   return `
     <div class="panel">
       <h3>${escapeHtml(title)}</h3>
@@ -59,14 +60,14 @@ function renderStatementSection(title, rows) {
         <thead>
           <tr>
             <th>\uacc4\uc815\uba85</th>
-            ${columns.map((column) => `<th>${column}</th>`).join("")}
+            ${columns.map((column) => `<th>${escapeHtml(column)}</th>`).join("")}
           </tr>
         </thead>
         <tbody>
           ${ordered.map((fact) => `
             <tr>
               <td>${escapeHtml(fact.label)}</td>
-              ${columns.map((_, index) => `<td>${formatRawNumber((fact.allValues ?? [fact.value]).slice(0, 3)[index])}</td>`).join("")}
+              ${columns.map((_, index) => `<td>${formatRawNumber((fact.allValues ?? [fact.value])[index])}</td>`).join("")}
             </tr>
           `).join("")}
         </tbody>
@@ -93,15 +94,38 @@ function fiscalColumnLabel(index) {
   return `${index + 1}\ubc88\uc9f8 \uc5f0\ub3c4`;
 }
 
-function buildPeriodColumns(rows, columnCount) {
+function buildStatementColumns(rows, columnCount, isEquityChanges) {
   const labels = [];
   for (const row of rows) {
-    for (const label of row.periodLabels ?? []) {
-      if (!labels.includes(label)) labels.push(label);
+    const sourceLabels = row.columnLabels?.length ? row.columnLabels : row.periodLabels ?? [];
+    for (const label of sourceLabels) {
+      const normalized = normalizeColumnLabel(label, isEquityChanges);
+      if (!labels.includes(normalized)) labels.push(normalized);
       if (labels.length >= columnCount) return labels;
     }
   }
+  if (isEquityChanges) return Array.from({ length: columnCount }, (_, index) => `Column ${index + 1}`);
   return Array.from({ length: columnCount }, (_, index) => fiscalColumnLabel(index));
+}
+
+function normalizeColumnLabel(label, isEquityChanges) {
+  const value = String(label ?? "").trim();
+  if (!isEquityChanges) return value;
+  const compact = value.replace(/\s+/g, "");
+  const aliases = new Map([
+    ["share_capital", "자본금"],
+    ["capital_surplus", "자본잉여금"],
+    ["capital_adjustments", "자본조정"],
+    ["other_components_of_equity", "기타자본구성요소"],
+    ["other_comprehensive_income", "기타포괄손익누계액"],
+    ["retained_earnings", "이익잉여금"],
+    ["noncontrolling_interests", "비지배지분"],
+    ["total_equity", "자본총계"],
+  ]);
+  if (aliases.has(value)) return aliases.get(value);
+  if (compact === "총계") return "총계";
+  if (compact === "자본합계") return "자본합계";
+  return value;
 }
 
 function formatRawNumber(value) {
