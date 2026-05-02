@@ -50,5 +50,6 @@ function defaultAnalysis() {
     openaiModel: "gpt-5.4-mini",
     geminiModel: "gemini-2.5-flash-lite",
     maxPages: 100,
+    premiumMode: false,
   };
 }

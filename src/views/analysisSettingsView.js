@@ -30,6 +30,12 @@ export function renderAnalysisSettingsView(root) {
         <input id="max-pages" type="number" min="1" max="500" value="${state.analysis.maxPages}" />
       </label>
 
+      <label class="field checkbox-field">
+        <span>Premium Mode</span>
+        <p class="field-help">Local History is free. Premium Mode marks future cloud sync, server retention, and team sharing features.</p>
+        <input id="premium-mode" type="checkbox" ${state.analysis.premiumMode ? "checked" : ""} />
+      </label>
+
       <div class="settings-actions">
         <button id="save-settings" class="btn primary">Apply Professional Settings</button>
       </div>
@@ -49,6 +55,7 @@ export function renderAnalysisSettingsView(root) {
     const settings = {
       provider: selectedProvider,
       maxPages: Number(root.querySelector("#max-pages").value || 100),
+      premiumMode: root.querySelector("#premium-mode").checked,
     };
 
     if (selectedProvider === "openai") settings.openaiModel = selectedModel;

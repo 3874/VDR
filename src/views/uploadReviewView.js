@@ -8,6 +8,7 @@ import { refineStatementCandidatesWithLLM } from "../extraction/llmSegmenter.js"
 import { extractFactsWithLLMStructure } from "../extraction/llmTableStructureExtractor.js";
 import { extractFactsWithVision } from "../extraction/llmVisionExtractor.js";
 import { filterFactsForStatement } from "../extraction/statementFactFilter.js";
+import { findHistoryByFile, saveHistoryRun } from "../history/historyStore.js";
 import { buildXbrlLike, mapMetricsToFacts } from "../xbrl/mapper.js";
 import { runStatementChecks } from "../validation/statementChecks.js";
 
@@ -40,6 +41,14 @@ export function renderUploadReviewView(root) {
 
 async function handleFiles(event) {
   const files = [...event.target.files];
+  const existingRun = files.map((file) => findHistoryByFile(file)).find(Boolean);
+  if (existingRun) {
+    state.activeView = "history";
+    addLog(`${existingRun.filename}: same filename and size already exists in History.`);
+    renderApp();
+    return;
+  }
+
   state.documents = [];
   state.documentReviews = [];
   for (const file of files) {
@@ -314,9 +323,38 @@ async function runExtraction() {
   state.facts = allFacts;
   state.xbrlLike = buildXbrlLike(allFacts);
   state.issues = runStatementChecks(allFacts);
+  saveLocalHistoryRun();
   addLog(`Extraction finished. Facts: ${state.facts.length}, issues: ${state.issues.length}.`);
   state.activeView = "results";
   renderApp();
+}
+
+function saveLocalHistoryRun() {
+  saveHistoryRun({
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    filename: state.documents.map((document) => document.filename).join(", "),
+    files: state.documents.map((document) => ({
+      name: document.file?.name ?? document.filename,
+      size: document.file?.size ?? 0,
+    })),
+    reportTypes: state.documentReviews.map((review) => review.reportType),
+    candidates: state.documents.flatMap((document) =>
+      (document.candidates ?? [])
+        .filter((candidate) => candidate.include)
+        .map((candidate) => ({
+          filename: document.filename,
+          scope: candidate.scope,
+          statementType: candidate.statementType,
+          startPage: candidate.startPage,
+          endPage: candidate.endPage,
+        })),
+    ),
+    facts: state.facts,
+    issues: state.issues,
+    xbrlLike: state.xbrlLike,
+  });
+  addLog(state.analysis.premiumMode ? "Extraction run saved to local History. Cloud sync is not connected yet." : "Extraction run saved to local History.");
 }
 
 function extractCandidateWithPdfText(document, candidate, pages, extractionOrderStart) {
