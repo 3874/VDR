@@ -16,12 +16,12 @@ export function setActiveView(view) {
 
 export function saveApiKeys(keys) {
   state.apiKeys = { ...state.apiKeys, ...keys };
-  localStorage.setItem("quant_vdr_api_keys", JSON.stringify(state.apiKeys));
+  safeSetLocalStorage("quant_vdr_api_keys", state.apiKeys);
 }
 
 export function saveAnalysisSettings(settings) {
   state.analysis = { ...state.analysis, ...settings };
-  localStorage.setItem("quant_vdr_analysis", JSON.stringify(state.analysis));
+  safeSetLocalStorage("quant_vdr_analysis", state.analysis);
 }
 
 export function addLog(message, type = "info") {
@@ -41,6 +41,14 @@ function loadAnalysisSettings() {
     return { ...defaultAnalysis(), ...(JSON.parse(localStorage.getItem("quant_vdr_analysis")) ?? {}) };
   } catch {
     return defaultAnalysis();
+  }
+}
+
+function safeSetLocalStorage(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch (error) {
+    console.warn(`Could not persist ${key}.`, error);
   }
 }
 

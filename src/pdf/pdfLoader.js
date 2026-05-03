@@ -2,16 +2,34 @@ const pdfjsLib = await import("https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/+
 pdfjsLib.GlobalWorkerOptions.workerSrc = "https://cdn.jsdelivr.net/npm/pdfjs-dist@4.10.38/build/pdf.worker.mjs";
 
 export async function loadPdfFile(file) {
-  const arrayBuffer = await file.arrayBuffer();
+  if (!file) throw new Error("No file was provided.");
+  if (!isPdfFile(file)) throw new Error(`${file.name || "Selected file"} is not a PDF.`);
+  let arrayBuffer;
+  try {
+    arrayBuffer = await file.arrayBuffer();
+  } catch (error) {
+    throw new Error(`Could not read ${file.name}. ${error.message}`);
+  }
   return loadPdfArrayBuffer(arrayBuffer, file.name, file);
 }
 
 async function loadPdfArrayBuffer(arrayBuffer, filename, file = null) {
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let pdf;
+  try {
+    pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  } catch (error) {
+    throw new Error(`Could not open PDF ${filename}. ${error.message}`);
+  }
   const pages = [];
   for (let pageNumber = 1; pageNumber <= pdf.numPages; pageNumber += 1) {
-    const page = await pdf.getPage(pageNumber);
-    const textContent = await page.getTextContent();
+    let page;
+    let textContent;
+    try {
+      page = await pdf.getPage(pageNumber);
+      textContent = await page.getTextContent();
+    } catch (error) {
+      throw new Error(`Could not read page ${pageNumber} of ${filename}. ${error.message}`);
+    }
     const itemRows = buildItemRows(textContent.items);
     const text = rowsToText(itemRows);
     pages.push({ pageNumber, text, items: textContent.items, itemRows });
@@ -24,6 +42,11 @@ async function loadPdfArrayBuffer(arrayBuffer, filename, file = null) {
     pageCount: pdf.numPages,
     pages,
   };
+}
+
+function isPdfFile(file) {
+  const name = String(file?.name ?? "").toLowerCase();
+  return file?.type === "application/pdf" || name.endsWith(".pdf");
 }
 
 function buildItemRows(items) {
@@ -58,9 +81,12 @@ function rowsToText(rows) {
 }
 
 export async function renderPdfPage(document, pageNumber, canvas, scale = 0.7) {
+  if (!document?.pdf) throw new Error("PDF document is not loaded.");
+  if (!canvas) throw new Error("Canvas is not available for page rendering.");
   const page = await document.pdf.getPage(pageNumber);
   const viewport = page.getViewport({ scale });
   const context = canvas.getContext("2d");
+  if (!context) throw new Error("Canvas rendering context is not available.");
   canvas.width = viewport.width;
   canvas.height = viewport.height;
   await page.render({ canvasContext: context, viewport }).promise;

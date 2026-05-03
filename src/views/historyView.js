@@ -24,8 +24,12 @@ export function renderHistoryView(root) {
   });
   root.querySelectorAll("[data-delete-history]").forEach((button) => {
     button.addEventListener("click", () => {
-      deleteHistoryRun(button.dataset.deleteHistory);
-      renderApp();
+      try {
+        deleteHistoryRun(button.dataset.deleteHistory);
+        renderApp();
+      } catch (error) {
+        root.querySelector(".panel").insertAdjacentHTML("beforeend", `<div class="status error">${escapeHtml(error.message)}</div>`);
+      }
     });
   });
 }

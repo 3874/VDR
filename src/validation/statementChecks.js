@@ -12,8 +12,11 @@ export function runStatementChecks(facts, tolerance = 1) {
     const liabilities = byConcept.get("Liabilities");
     const equity = byConcept.get("Equity");
     if (!assets || !liabilities || !equity) continue;
-    const expected = Number(liabilities.value ?? 0) + Number(equity.value ?? 0);
-    const actual = Number(assets.value ?? 0);
+    const actual = toFiniteNumber(assets.value);
+    const liabilityValue = toFiniteNumber(liabilities.value);
+    const equityValue = toFiniteNumber(equity.value);
+    if (actual == null || liabilityValue == null || equityValue == null) continue;
+    const expected = liabilityValue + equityValue;
     if (Math.abs(actual - expected) > tolerance) {
       issues.push({
         severity: "critical",
@@ -29,4 +32,10 @@ export function runStatementChecks(facts, tolerance = 1) {
     }
   }
   return issues;
+}
+
+function toFiniteNumber(value) {
+  if (value == null || value === "") return null;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null;
 }

@@ -95,7 +95,7 @@ async function callOpenAI(provider, prompt, options = {}) {
   });
   if (!response.ok) throw new Error(`${options.purpose || "OpenAI request"} failed: ${response.status} ${await response.text()}`);
   const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  return requireText(data.choices?.[0]?.message?.content, options.purpose || "OpenAI request");
 }
 
 async function callGemini(provider, prompt, options = {}) {
@@ -110,7 +110,7 @@ async function callGemini(provider, prompt, options = {}) {
   });
   if (!response.ok) throw new Error(`${options.purpose || "Gemini request"} failed: ${response.status} ${await response.text()}`);
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+  return requireText(data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join(""), options.purpose || "Gemini request");
 }
 
 async function callOpenAIVision(provider, prompt, images, options = {}) {
@@ -138,7 +138,7 @@ async function callOpenAIVision(provider, prompt, images, options = {}) {
   });
   if (!response.ok) throw new Error(`${options.purpose || "OpenAI Vision"} failed: ${response.status} ${await response.text()}`);
   const data = await response.json();
-  return data.choices?.[0]?.message?.content ?? "";
+  return requireText(data.choices?.[0]?.message?.content, options.purpose || "OpenAI Vision");
 }
 
 async function callGeminiVision(provider, prompt, images, options = {}) {
@@ -161,7 +161,13 @@ async function callGeminiVision(provider, prompt, images, options = {}) {
   });
   if (!response.ok) throw new Error(`${options.purpose || "Gemini Vision"} failed: ${response.status} ${await response.text()}`);
   const data = await response.json();
-  return data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join("") ?? "";
+  return requireText(data.candidates?.[0]?.content?.parts?.map((part) => part.text ?? "").join(""), options.purpose || "Gemini Vision");
+}
+
+function requireText(value, purpose) {
+  const text = String(value ?? "").trim();
+  if (!text) throw new Error(`${purpose} returned an empty response.`);
+  return text;
 }
 
 function estimateImageTokens(images) {

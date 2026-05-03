@@ -41,6 +41,7 @@ export function renderUploadReviewView(root) {
 
 async function handleFiles(event) {
   const files = [...event.target.files];
+  if (!files.length) return;
   const existingRun = files.map((file) => findHistoryByFile(file)).find(Boolean);
   if (existingRun) {
     state.activeView = "history";
@@ -52,12 +53,16 @@ async function handleFiles(event) {
   state.documents = [];
   state.documentReviews = [];
   for (const file of files) {
-    addLog(`Loading ${file.name}`);
-    const document = await loadPdfFile(file);
-    const review = reviewDocumentStructure(document);
-    state.documents.push({ ...document, candidates: [] });
-    state.documentReviews.push(review);
-    addLog(`${file.name}: ${review.reportType}, TOC ${review.toc.exists ? "found" : "not found"}.`);
+    try {
+      addLog(`Loading ${file.name}`);
+      const document = await loadPdfFile(file);
+      const review = reviewDocumentStructure(document);
+      state.documents.push({ ...document, candidates: [] });
+      state.documentReviews.push(review);
+      addLog(`${file.name}: ${review.reportType}, TOC ${review.toc.exists ? "found" : "not found"}.`);
+    } catch (error) {
+      addLog(`${file.name}: upload failed. ${error.message}`, "error");
+    }
   }
   addLog(`Loaded ${state.documents.length} PDF file(s).`);
   renderApp();
@@ -277,7 +282,13 @@ function renderPreviews(container, document) {
     const card = container.querySelector(`[data-preview="${idx}"]`).closest(".preview-card");
     const select = card.querySelector("select");
     const canvas = card.querySelector("canvas");
-    const draw = () => renderPdfPage(document, Number(select.value), canvas);
+    const draw = async () => {
+      try {
+        await renderPdfPage(document, Number(select.value), canvas);
+      } catch (error) {
+        addLog(`${document.filename}: preview render failed for page ${select.value}. ${error.message}`, "error");
+      }
+    };
     select.addEventListener("change", draw);
     draw();
   });
@@ -330,31 +341,35 @@ async function runExtraction() {
 }
 
 function saveLocalHistoryRun() {
-  saveHistoryRun({
-    id: crypto.randomUUID(),
-    createdAt: new Date().toISOString(),
-    filename: state.documents.map((document) => document.filename).join(", "),
-    files: state.documents.map((document) => ({
-      name: document.file?.name ?? document.filename,
-      size: document.file?.size ?? 0,
-    })),
-    reportTypes: state.documentReviews.map((review) => review.reportType),
-    candidates: state.documents.flatMap((document) =>
-      (document.candidates ?? [])
-        .filter((candidate) => candidate.include)
-        .map((candidate) => ({
-          filename: document.filename,
-          scope: candidate.scope,
-          statementType: candidate.statementType,
-          startPage: candidate.startPage,
-          endPage: candidate.endPage,
-        })),
-    ),
-    facts: state.facts,
-    issues: state.issues,
-    xbrlLike: state.xbrlLike,
-  });
-  addLog(state.analysis.premiumMode ? "Extraction run saved to local History. Cloud sync is not connected yet." : "Extraction run saved to local History.");
+  try {
+    saveHistoryRun({
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      filename: state.documents.map((document) => document.filename).join(", "),
+      files: state.documents.map((document) => ({
+        name: document.file?.name ?? document.filename,
+        size: document.file?.size ?? 0,
+      })),
+      reportTypes: state.documentReviews.map((review) => review.reportType),
+      candidates: state.documents.flatMap((document) =>
+        (document.candidates ?? [])
+          .filter((candidate) => candidate.include)
+          .map((candidate) => ({
+            filename: document.filename,
+            scope: candidate.scope,
+            statementType: candidate.statementType,
+            startPage: candidate.startPage,
+            endPage: candidate.endPage,
+          })),
+      ),
+      facts: state.facts,
+      issues: state.issues,
+      xbrlLike: state.xbrlLike,
+    });
+    addLog(state.analysis.premiumMode ? "Extraction run saved to local History. Cloud sync is not connected yet." : "Extraction run saved to local History.");
+  } catch (error) {
+    addLog(error.message, "error");
+  }
 }
 
 function extractCandidateWithPdfText(document, candidate, pages, extractionOrderStart) {

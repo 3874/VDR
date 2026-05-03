@@ -11,20 +11,33 @@ export function loadHistoryItems() {
 }
 
 export function saveHistoryRun(run) {
-  const items = loadHistoryItems();
-  const next = [normalizeRun(run), ...items.filter((item) => item.id !== run.id)].slice(0, MAX_HISTORY_ITEMS);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  return next;
+  try {
+    const items = loadHistoryItems();
+    const normalized = normalizeRun(run);
+    const next = [normalized, ...items.filter((item) => item.id !== normalized.id)].slice(0, MAX_HISTORY_ITEMS);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    return next;
+  } catch (error) {
+    throw new Error(`Could not save local History. ${error.message}`);
+  }
 }
 
 export function deleteHistoryRun(id) {
-  const next = loadHistoryItems().filter((item) => item.id !== id);
-  localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
-  return next;
+  try {
+    const next = loadHistoryItems().filter((item) => item.id !== id);
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(next));
+    return next;
+  } catch (error) {
+    throw new Error(`Could not delete local History item. ${error.message}`);
+  }
 }
 
 export function clearHistoryRuns() {
-  localStorage.removeItem(HISTORY_KEY);
+  try {
+    localStorage.removeItem(HISTORY_KEY);
+  } catch {
+    // Ignore local cleanup failures. The caller can continue without History.
+  }
 }
 
 export function findHistoryByFile(file) {

@@ -16,6 +16,7 @@ const ROW_KEYWORDS = {
 };
 
 export function discoverStatementSpans(document, maxSpanPages = 3) {
+  if (!Array.isArray(document?.pages) || !document.pages.length) return [];
   const contexts = buildScopeContext(document.pages);
   const candidates = [];
   for (const page of document.pages) {
@@ -115,6 +116,7 @@ function combineSpanText(pages, startPage, maxSpanPages) {
 }
 
 function resolveSpanStart(pages, pageNumber, statementType, maxSpanPages) {
+  if (!pages.length) return pageNumber;
   const byPage = new Map(pages.map((page) => [page.pageNumber, page]));
   const currentText = byPage.get(pageNumber)?.text ?? "";
   if (!hasTitle(currentText, statementType)) return pageNumber;
@@ -138,6 +140,7 @@ function hasStrongStatementBody(text, statementType) {
 }
 
 function inferSpanEnd(pages, startPage, statementType, maxSpanPages) {
+  if (!pages.length) return startPage;
   const byPage = new Map(pages.map((page) => [page.pageNumber, page]));
   const lastPageNumber = Math.max(...pages.map((page) => page.pageNumber));
   const max = Math.min(lastPageNumber, startPage + maxSpanPages - 1);

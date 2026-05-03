@@ -11,6 +11,9 @@
  * @returns {Promise<{base64: string, mimeType: string, width: number, height: number}>}
  */
 async function renderPageToBase64(document, pageNumber, scale = 1.5) {
+  if (!document?.pdf) throw new Error("PDF document is not loaded.");
+  if (!globalThis.document?.createElement) throw new Error("Browser canvas API is not available.");
+
   const page = await document.pdf.getPage(pageNumber);
   const viewport = page.getViewport({ scale });
 
@@ -19,6 +22,7 @@ async function renderPageToBase64(document, pageNumber, scale = 1.5) {
   canvas.height = viewport.height;
 
   const context = canvas.getContext("2d");
+  if (!context) throw new Error(`Canvas rendering context is not available for page ${pageNumber}.`);
   await page.render({ canvasContext: context, viewport }).promise;
 
   const dataUrl = canvas.toDataURL("image/png");
@@ -45,8 +49,12 @@ async function renderPageToBase64(document, pageNumber, scale = 1.5) {
 export async function renderPagesToBase64(document, pageNumbers, scale = 1.5) {
   const results = [];
   for (const pageNumber of pageNumbers) {
-    const rendered = await renderPageToBase64(document, pageNumber, scale);
-    results.push({ pageNumber, ...rendered });
+    try {
+      const rendered = await renderPageToBase64(document, pageNumber, scale);
+      results.push({ pageNumber, ...rendered });
+    } catch (error) {
+      throw new Error(`Could not render page ${pageNumber} for Vision extraction. ${error.message}`);
+    }
   }
   return results;
 }
